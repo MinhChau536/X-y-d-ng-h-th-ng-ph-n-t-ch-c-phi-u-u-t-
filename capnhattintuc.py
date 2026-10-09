@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-MODULE 3 - THÔNG TIN, TIN TỨC DOANH NGHIỆP (v2, chạy trong 1 ô Google Colab)
-Thu thập -> Lọc (mã/tên, ngôn ngữ, tin nhiễu) -> Khử trùng lặp -> Phân loại sự kiện
--> Chấm cảm xúc -> Chọn tin có giá trị đầu tư -> Điểm tổng hợp -> PDF
-Chỉ cần sửa phần CẤU HÌNH.
-"""
 import subprocess, sys
 
 try:
@@ -12,7 +5,7 @@ try:
 except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "feedparser", "reportlab"], check=False)
 
-import os, re, json, csv, unicodedata
+import os, re, json, unicodedata
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
@@ -22,9 +15,6 @@ from urllib.parse import quote
 import requests
 import feedparser
 
-# =============================================================================
-# CẤU HÌNH
-# =============================================================================
 DAYS      = 30            # số ngày tin gần nhất
 MAX_ITEMS = 15            # số tin hiển thị trong PDF mỗi mã
 USE_LLM   = False         # True nếu đã đặt ANTHROPIC_API_KEY
@@ -39,13 +29,9 @@ GENERAL_RSS = {
     "Vietstock - Cổ phiếu": "https://vietstock.vn/830/chung-khoan/co-phieu.rss",
     "VnExpress - Kinh doanh": "https://vnexpress.net/rss/kinh-doanh.rss",
 }
-# Truy vấn có chủ đích: kéo đúng loại tin nhà đầu tư cần
 TARGET_QUERIES = ["{t} kết quả kinh doanh", "{t} cổ tức", "{t} khuyến nghị giá mục tiêu",
                   "{n} lợi nhuận quý", "{n} cổ đông"]
 
-# =============================================================================
-# TỪ ĐIỂN
-# =============================================================================
 POSITIVE = {
     "lợi nhuận tăng": 1.5, "lãi tăng": 1.5, "lãi đậm": 1.5, "tăng trưởng": 1.0,
     "vượt kế hoạch": 1.5, "kỷ lục": 0.8, "bứt phá": 1.2, "đột phá": 1.0,
@@ -66,20 +52,13 @@ NEGATIVE = {
     "hủy niêm yết": 2.0, "diện cảnh báo": 1.5, "cắt margin": 1.3, "chậm công bố": 1.2,
     "chậm nộp": 1.2, "rủi ro": 0.7, "áp lực": 0.7, "khó khăn": 0.9, "nợ quá hạn": 1.5,
     "mất thanh khoản": 1.3, "từ nhiệm": 0.6, "trái phiếu quá hạn": 1.8, "ngừng sản xuất": 1.2,
-    "thu hồi sản phẩm": 1.5, "kiện": 0.8, "giảm giá": 0.8,
+    "thu hồi sản phẩm": 1.5, "kiện": 0.8,
 }
-RED_FLAGS = ["khởi tố", "bắt tạm giam", "điều tra", "xử phạt", "bị phạt", "đình chỉ", "hủy niêm yết",
-             "diện cảnh báo", "cắt margin", "chậm công bố", "chậm nộp", "trái phiếu quá hạn",
-             "nợ quá hạn", "thu hồi sản phẩm", "vi phạm"]
-STOCK_WORDS = ["cổ phiếu", "chứng khoán", "vn-index", "vnindex", "thị trường", "phiên"]
-_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 NEGATORS = {"không", "chưa", "chẳng", "hết", "tránh", "thoát", "xóa", "xoá"}
-# Cụm trung tính: che đi để không bị tính nhầm (vd "giảm giá" là khuyến mãi, không phải tin xấu)
 NEUTRAL_MASK = ["giảm giá", "khuyến mãi", "siêu sale", "giảm giá sâu", "ưu đãi"]
 
-# Tin nhiễu: không mang thông tin đầu tư -> loại bỏ
 NOISE_DROP = ["chứng quyền", "mời thầu", "siêu sale", "khuyến mãi", "tuyển dụng", "dân vũ",
-              "người cao tuổi", "học bổng", "xổ số", "horoscope", "bảng giá sữa",
+              "người cao tuổi", "giảm giá", "học bổng", "xổ số", "horoscope", "bảng giá sữa",
               "mã giảm giá", "voucher"]
 
 EVENT_RULES = {
@@ -93,19 +72,14 @@ EVENT_RULES = {
     "Vĩ mô & ngành": ["ngành", "thị trường", "chính sách", "lãi suất", "tỷ giá", "thuế", "xuất khẩu"],
     "Thương hiệu & truyền thông": ["vinh danh", "giải thưởng", "thương hiệu", "50 năm", "đồng hành", "fortune", "forbes"],
 }
-# Mức độ tác động tới định giá: dùng để xếp hạng tin và tính điểm tổng hợp
 EVENT_WEIGHT = {
     "Kết quả kinh doanh": 1.0, "Cổ tức & cổ phiếu": 0.9, "Khuyến nghị & phân tích": 0.9,
     "Pháp lý & rủi ro": 1.0, "Nợ & trái phiếu": 0.8, "M&A & đầu tư": 0.8,
     "Ban lãnh đạo": 0.6, "Vĩ mô & ngành": 0.5, "Thương hiệu & truyền thông": 0.25, "Khác": 0.2,
 }
 
-# Ký tự chỉ có trong tiếng Việt (để loại tin tiếng Anh/Romania... trùng lặp)
 VN_ONLY = re.compile(r"[đĐơƠưƯạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]", re.I)
 
-# =============================================================================
-# DỮ LIỆU
-# =============================================================================
 @dataclass
 class NewsItem:
     title: str
@@ -118,7 +92,6 @@ class NewsItem:
     label: str = "Trung lập"
     reason: str = ""
     relevance: float = 1.0
-    red_flag: bool = False
 
 @dataclass
 class NewsReport:
@@ -136,10 +109,6 @@ class NewsReport:
     key_catalysts: List[str] = field(default_factory=list)
     narrative: str = ""
     pdf_path: str = ""
-    stance: str = ""
-    confidence: str = ""
-    stance_reason: str = ""
-    red_flags: List[str] = field(default_factory=list)
 
     def to_dict(self):
         d = asdict(self)
@@ -148,9 +117,6 @@ class NewsReport:
                 it["published"] = it["published"].isoformat()
         return d
 
-# =============================================================================
-# TRA CỨU TÊN DOANH NGHIỆP TỪ MÃ CỔ PHIẾU (để mã nào cũng chạy được)
-# =============================================================================
 COMPANY_DB = {
     "VNM": ("Vinamilk", ["Sữa Việt Nam"]), "FPT": ("FPT", ["Tập đoàn FPT"]),
     "HPG": ("Hòa Phát", ["Tập đoàn Hòa Phát"]), "VCB": ("Vietcombank", ["Ngân hàng Ngoại thương"]),
@@ -167,15 +133,6 @@ COMPANY_DB = {
     "DGC": ("Đức Giang", ["Hóa chất Đức Giang"]), "DPM": ("Đạm Phú Mỹ", []), "DCM": ("Đạm Cà Mau", []),
     "REE": ("REE", ["Cơ điện lạnh"]), "KDH": ("Khang Điền", []), "NVL": ("Novaland", []),
     "HAG": ("Hoàng Anh Gia Lai", []), "BVH": ("Bảo Việt", []), "VPI": ("Văn Phú Invest", []),
-    "PVS": ("PVS", ["Dịch vụ Kỹ thuật Dầu khí"]), "PVD": ("PV Drilling", ["Khoan Dầu khí"]),
-    "BSR": ("Lọc hóa dầu Bình Sơn", []), "NLG": ("Nam Long", []), "DIG": ("DIC Corp", []),
-    "PDR": ("Phát Đạt", []), "CTD": ("Coteccons", []), "VCG": ("Vinaconex", []),
-    "HSG": ("Hoa Sen", ["Tập đoàn Hoa Sen"]), "NKG": ("Nam Kim", []), "GMD": ("Gemadept", []),
-    "DBC": ("Dabaco", []), "BMP": ("Nhựa Bình Minh", []), "FRT": ("FPT Retail", ["Long Châu"]),
-    "DGW": ("Digiworld", []), "EIB": ("Eximbank", []), "OCB": ("OCB", ["Ngân hàng Phương Đông"]),
-    "MSB": ("MSB", ["Ngân hàng Hàng hải"]), "VGC": ("Viglacera", []), "IDC": ("IDICO", []),
-    "KBC": ("Kinh Bắc", []), "SZC": ("Sonadezi Châu Đức", []), "HCM": ("HSC", ["Chứng khoán TP.HCM"]),
-    "VIX": ("VIX", []), "ANV": ("Nam Việt", []), "VHC": ("Vĩnh Hoàn", []),
 }
 
 def resolve_company(ticker, override=""):
@@ -186,18 +143,15 @@ def resolve_company(ticker, override=""):
     if t in COMPANY_DB:
         name, al = COMPANY_DB[t]
         return name, al
-    try:                                    # tuỳ chọn: tra tự động nếu máy có vnstock
+    try:                                    
         from vnstock import Vnstock
         prof = Vnstock().stock(symbol=t, source="VCI").company.profile()
         name = str(prof["company_name"].iloc[0])
         name = re.sub(r"^(Công ty Cổ phần|CTCP|Tổng công ty|Ngân hàng TMCP|Ngân hàng Thương mại Cổ phần)\s+", "", name, flags=re.I)
         return name, []
     except Exception:
-        return "", []                       # không biết tên -> chỉ lọc theo mã (vẫn chạy được)
+        return "", []                       
 
-# =============================================================================
-# THU THẬP
-# =============================================================================
 def _norm(s):
     return unicodedata.normalize("NFC", s or "").lower().strip()
 
@@ -235,18 +189,12 @@ def collect(ticker, names, days):
     print(f"Đã thu thập {len(items)} tin thô.")
     return items
 
-# =============================================================================
-# LỌC
-# =============================================================================
 def is_vietnamese(it):
     return bool(VN_ONLY.search(it.title + " " + it.summary))
 
 def is_noise(it):
     t = _norm(it.title)
-    if any(k in t for k in NOISE_DROP):
-        return True
-    # "giảm giá" thường là khuyến mãi; chỉ giữ nếu tiêu đề nói về cổ phiếu/thị trường
-    return "giảm giá" in t and not any(w in t for w in STOCK_WORDS)
+    return any(k in t for k in NOISE_DROP)
 
 def filter_relevant(items, ticker, names, days):
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -289,14 +237,11 @@ def dedupe(items, thr=0.8, jac=0.6):
             uniq.append(it)
     return uniq
 
-# =============================================================================
-# PHÂN LOẠI & CẢM XÚC
-# =============================================================================
 def classify_event(text):
     t = _norm(text)
     best, best_n = "Khác", 0
     for ev, kws in EVENT_RULES.items():
-        n = sum(1 for k in kws if re.search(rf"(?<!\w){re.escape(k)}(?!\w)", t))
+        n = sum(1 for k in kws if k in t)
         if n > best_n:
             best, best_n = ev, n
     return best
@@ -307,10 +252,7 @@ def lexicon_sentiment(title, summary=""):
     entries = [(p, w, 1) for p, w in POSITIVE.items()] + [(p, w, -1) for p, w in NEGATIVE.items()]
     entries.sort(key=lambda x: -len(x[0]))
     for text, mult in ((_norm(title), 2.0), (_norm(summary), 1.0)):
-        in_stock_ctx = any(w in text for w in STOCK_WORDS)
         for ph in NEUTRAL_MASK:
-            if "giảm giá" in ph and in_stock_ctx:   # "cổ phiếu giảm giá" là giá giảm, không phải khuyến mãi
-                continue
             text = text.replace(ph, " " * len(ph))
         for phrase, w, sign in entries:
             for m in list(re.finditer(rf"(?<!\w){re.escape(phrase)}(?!\w)", text)):
@@ -347,12 +289,9 @@ def llm_refine(items, model="claude-sonnet-4-6"):
     except Exception as e:
         print("[CẢNH BÁO] LLM lỗi, giữ kết quả từ điển:", e)
 
-# =============================================================================
-# CHỌN TIN & TỔNG HỢP
-# =============================================================================
 def priority(it, now):
     age = (now - it.published).days if it.published else 14
-    return EVENT_WEIGHT.get(it.event, 0.2) * 2 + it.relevance + 0.5 ** (age / 14) + (3.0 if it.red_flag else 0.0)
+    return EVENT_WEIGHT.get(it.event, 0.2) * 2 + it.relevance + 0.5 ** (age / 14)
 
 def select_top(items, n):
     now = datetime.now(timezone.utc)
@@ -389,24 +328,6 @@ def narrative_of(rep):
     if rep.key_risks:     s += " Rủi ro cần theo dõi: " + "; ".join(rep.key_risks[:2]) + "."
     return s + " Điểm cảm xúc dựa trên phân tích từ khoá nên chỉ mang tính tham khảo."
 
-def assess_stance(rep, all_items):
-    """Kết luận rule-based: Ủng hộ / Trung lập / Tiêu cực / Thận trọng / Chưa đủ cơ sở + độ tin cậy."""
-    flags = [i for i in all_items if i.red_flag]
-    invest = [i for i in rep.items if EVENT_WEIGHT.get(i.event, 0) >= 0.5]
-    n_src = len({i.source for i in rep.items})
-    conf = "Cao" if len(invest) >= 5 and n_src >= 4 else "Trung bình" if len(invest) >= 2 else "Thấp"
-    if flags:
-        return ("Thận trọng", conf,
-                f"Có {len(flags)} tin cảnh báo (pháp lý, vi phạm, nợ...) cần xác minh trước khi quyết định, bất kể điểm cảm xúc chung.")
-    if len(invest) < 2:
-        return ("Chưa đủ cơ sở", "Thấp",
-                "Số tin có tác động trực tiếp tới định giá quá ít; không nên kết luận chỉ từ tin tức.")
-    if rep.score >= 0.2:
-        return ("Ủng hộ", conf, "Các tin về kết quả kinh doanh, cổ tức, khuyến nghị nghiêng về tích cực và chưa có tin cảnh báo.")
-    if rep.score <= -0.2:
-        return ("Tiêu cực", conf, "Các tin có tác động tới định giá nghiêng về tiêu cực.")
-    return ("Trung lập - tiếp tục theo dõi", conf, "Tin tức tích cực và tiêu cực cân bằng, chưa tạo xu hướng rõ ràng.")
-
 def build_news_report(ticker, company="", days=30, aliases=None, use_llm=False, max_items=15):
     ticker = ticker.upper().strip()
     names = [n for n in [company] + (aliases or []) if n]
@@ -416,8 +337,6 @@ def build_news_report(ticker, company="", days=30, aliases=None, use_llm=False, 
     for it in items:
         it.event = classify_event(it.title + " " + it.summary)
         it.sentiment, it.reason = lexicon_sentiment(it.title, it.summary)
-        rs = set(it.reason.split(', '))          # cờ đỏ: chỉ khi từ khoá xấu KHÔNG bị phủ định
-        it.red_flag = any('-' + f in rs for f in RED_FLAGS)
     if use_llm and items:
         llm_refine(items[:40])
     for it in items:
@@ -434,14 +353,8 @@ def build_news_report(ticker, company="", days=30, aliases=None, use_llm=False, 
     rep.key_catalysts = [i.title for i in sorted(ranked, key=lambda x: -x.sentiment)[:3] if i.sentiment > 0.15]
     rep.key_risks = [i.title for i in sorted(ranked, key=lambda x: x.sentiment)[:3] if i.sentiment < -0.15]
     rep.narrative = narrative_of(rep)
-    flagged = sorted([i for i in items if i.red_flag], key=lambda x: x.published or _EPOCH, reverse=True)
-    rep.red_flags = [i.title for i in flagged[:5]]
-    rep.stance, rep.confidence, rep.stance_reason = assess_stance(rep, items)
     return rep
 
-# =============================================================================
-# PDF
-# =============================================================================
 FONT_CANDIDATES = [
     ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
     ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf"),
@@ -450,14 +363,11 @@ FONT_CANDIDATES = [
 def register_fonts():
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    if "VN" in pdfmetrics.getRegisteredFontNames():
-        return
     for attempt in range(2):
         for reg, bold in FONT_CANDIDATES:
             if os.path.exists(reg) and os.path.exists(bold):
                 pdfmetrics.registerFont(TTFont("VN", reg))
                 pdfmetrics.registerFont(TTFont("VN-B", bold))
-                pdfmetrics.registerFontFamily("VN", normal="VN", bold="VN-B", italic="VN", boldItalic="VN-B")
                 return
         if attempt == 0:
             subprocess.run(["apt-get", "install", "-y", "-qq", "fonts-dejavu-core"], check=False)
@@ -470,7 +380,6 @@ def news_flowables(rep):
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     from reportlab.graphics.shapes import Drawing, Rect, String
     from xml.sax.saxutils import escape
-    register_fonts()
 
     h  = ParagraphStyle("h",  fontName="VN-B", fontSize=14, spaceAfter=6)
     h2 = ParagraphStyle("h2", fontName="VN-B", fontSize=10.5, spaceBefore=8, spaceAfter=4)
@@ -484,28 +393,6 @@ def news_flowables(rep):
     fl = [Paragraph(f"Thông tin &amp; tin tức doanh nghiệp - {escape(rep.ticker)}", h),
           Paragraph(f"Cập nhật: {rep.generated_at}", sm), Spacer(1, 4),
           Paragraph(escape(rep.narrative), p), Spacer(1, 8)]
-
-    # Hộp nhận định đầu tư từ tin tức
-    st_col = {"Ủng hộ": "#1B7F3B", "Tiêu cực": "#C0392B", "Thận trọng": "#B45309"}.get(rep.stance, "#374151")
-    box = Table([[Paragraph(f'<b>Nhận định từ tin tức: <font color="{st_col}">{escape(rep.stance)}</font></b> '
-                            f'(độ tin cậy: {escape(rep.confidence)}). {escape(rep.stance_reason)} '
-                            'Nhận định chỉ dựa trên tin tức, cần kết hợp phân tích kỹ thuật và cơ bản.', sm)]],
-                colWidths=[17.4 * cm])
-    box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor(st_col)),
-                             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F9FAFB")),
-                             ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 5),
-                             ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    fl += [box, Spacer(1, 6)]
-
-    # Hộp cảnh báo đỏ
-    if rep.red_flags:
-        txt = "<b>CẢNH BÁO RỦI RO</b><br/>" + "<br/>".join("• " + escape(x) for x in rep.red_flags)
-        rb = Table([[Paragraph(txt, sm)]], colWidths=[17.4 * cm])
-        rb.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#C0392B")),
-                                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FDECEA")),
-                                ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 5),
-                                ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-        fl += [rb, Spacer(1, 6)]
 
     d = Drawing(440, 32)
     d.add(Rect(0, 14, 440, 10, fillColor=colors.HexColor("#E5E7EB"), strokeColor=None))
@@ -527,17 +414,14 @@ def news_flowables(rep):
     rows = [[Paragraph(f"<b>{x}</b>", sm) for x in ("Ngày", "Tiêu đề", "Nguồn", "Sự kiện", "Cảm xúc")]]
     for it in rep.items:
         dt = it.published.strftime("%d/%m") if it.published else "-"
-        href = escape(it.url or "", {'"': "&quot;"})
-        src_html = f'<link href="{href}" color="#1D4ED8">{escape(it.source)}</link>' if href else escape(it.source)
-        title_html = ("<b>[!]</b> " if it.red_flag else "") + escape(it.title)
-        rows.append([Paragraph(dt, sm), Paragraph(title_html, sm), Paragraph(src_html, sm),
+        rows.append([Paragraph(dt, sm), Paragraph(escape(it.title), sm), Paragraph(escape(it.source), sm),
                      Paragraph(escape(it.event), sm),
                      Paragraph(f'<font color="#{col[it.label].hexval()[2:]}">{it.label} ({it.sentiment:+.2f})</font>', sm)])
     t = Table(rows, colWidths=[1.3 * cm, 8 * cm, 2.5 * cm, 2.8 * cm, 2.4 * cm], repeatRows=1)
     t.setStyle(grid)
     fl += [t, Spacer(1, 4),
            Paragraph("Nguồn: Google News, CafeF, Vietstock, VnExpress. Đã loại tin trùng lặp, tin ngoại ngữ và tin quảng cáo. "
-                     "Bấm vào tên nguồn để mở bài gốc; [!] là tin cảnh báo. Cảm xúc chấm tự động, chỉ mang tính tham khảo.", sm)]
+                     "Cảm xúc chấm tự động, chỉ mang tính tham khảo.", sm)]
     return fl
 
 def export_pdf(rep, path):
@@ -547,23 +431,20 @@ def export_pdf(rep, path):
     SimpleDocTemplate(path, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36).build(news_flowables(rep))
     return path
 
-# =============================================================================
-# CHẠY: người dùng nhập mã bất kỳ (một hoặc nhiều mã, cách nhau dấu phẩy)
-# =============================================================================
 def analyze(ticker, company="", days=DAYS, max_items=MAX_ITEMS, use_llm=USE_LLM, make_pdf=True):
     """Hàm chính để tích hợp vào hệ thống: nhận mã cổ phiếu bất kỳ -> NewsReport (+ PDF)."""
     ticker = ticker.upper().strip()
     if not re.fullmatch(r"[A-Z0-9]{2,5}", ticker):
         raise ValueError(f"Mã cổ phiếu không hợp lệ: {ticker!r}")
     name, aliases = resolve_company(ticker, company)
-    print(f"\n===== {ticker} | {name or '(đang lọc theo mã)'} =====")
+    print(f"\n===== {ticker} | {name or '(chưa rõ tên doanh nghiệp, lọc theo mã)'} =====")
     rep = build_news_report(ticker, name, days, aliases, use_llm, max_items)
     if make_pdf:
         rep.pdf_path = export_pdf(rep, f"tin_tuc_{ticker}.pdf")
     return rep
 
 def run_cli():
-    raw = input("Nhập mã cổ phiếu (nhiều mã cách nhau dấu phẩy, ví dụ: VNM, GVR, PVS): ").strip()
+    raw = input("Nhập mã cổ phiếu (nhiều mã cách nhau dấu phẩy, ví dụ: VNM, FPT, HPG): ").strip()
     tickers = [t.strip().upper() for t in re.split(r"[,\s;]+", raw) if t.strip()] or ["VNM"]
     results = []
     for t in tickers:
@@ -576,7 +457,7 @@ def run_cli():
             d = it.published.strftime("%d/%m/%Y") if it.published else "--"
             print(f"[{d}] {it.label:9s} {it.sentiment:+.2f} | {it.event:26s} | {it.title} ({it.source})")
         results.append(rep)
-    if len(results) > 1:                                    # bảng so sánh nhiều mã
+    if len(results) > 1:                                    
         print("\n===== SO SÁNH =====")
         print(f"{'Mã':6s}{'Điểm':>8s}  {'Xu hướng':10s}{'Số tin':>7s}")
         for r in sorted(results, key=lambda r: -r.score):
@@ -589,57 +470,5 @@ def run_cli():
         pass
     return results
 
-# =============================================================================
-# ĐO ĐỘ CHÍNH XÁC CỦA PHẦN CHẤM CẢM XÚC (dùng cho báo cáo đồ án)
-# Bước 1: export_labeling_sheet(["VNM","FPT","HPG"])  -> tạo file CSV
-# Bước 2: mở CSV, điền cột "human" bằng: Tích cực / Trung lập / Tiêu cực (khoảng 50 dòng)
-# Bước 3: evaluate_labeled_csv("nhan_cam_xuc.csv")   -> in độ chính xác, precision/recall
-# =============================================================================
-LABELS = ["Tích cực", "Trung lập", "Tiêu cực"]
-_LABEL_MAP = {"tích cực": "Tích cực", "tich cuc": "Tích cực", "+": "Tích cực", "1": "Tích cực", "pos": "Tích cực",
-              "trung lập": "Trung lập", "trung lap": "Trung lập", "0": "Trung lập", "neu": "Trung lập",
-              "tiêu cực": "Tiêu cực", "tieu cuc": "Tiêu cực", "-": "Tiêu cực", "-1": "Tiêu cực", "neg": "Tiêu cực"}
-
-def export_labeling_sheet(tickers, path="nhan_cam_xuc.csv", n=60, days=DAYS):
-    per = max(5, n // max(1, len(tickers)))
-    rows = []
-    for t in tickers:
-        name, al = resolve_company(t)
-        names = [x for x in [name] + al if x]
-        items = dedupe(filter_relevant(collect(t, names, days), t, names, days))
-        for it in items[:per]:
-            rows.append({"ticker": t, "title": it.title, "pred": label_of(lexicon_sentiment(it.title, it.summary)[0]), "human": ""})
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=["ticker", "title", "pred", "human"])
-        w.writeheader(); w.writerows(rows)
-    print(f"Đã tạo {path} với {len(rows)} dòng. Hãy điền cột 'human' rồi chạy evaluate_labeled_csv().")
-    return path
-
-def evaluate_labeled_csv(path="nhan_cam_xuc.csv"):
-    data = []
-    with open(path, encoding="utf-8-sig") as f:
-        for r in csv.DictReader(f):
-            h = _LABEL_MAP.get((r.get("human") or "").strip().lower())
-            if h and r.get("pred") in LABELS:
-                data.append((h, r["pred"]))
-    if not data:
-        print("Chưa có dòng nào được gán nhãn ở cột 'human'."); return {}
-    acc = sum(h == p for h, p in data) / len(data)
-    print(f"Số mẫu: {len(data)} | Độ chính xác: {acc:.1%}\n")
-    print(f"{'Nhãn':10s}{'Precision':>10s}{'Recall':>9s}{'F1':>7s}{'Mẫu':>6s}")
-    out = {"n": len(data), "accuracy": acc, "per_class": {}}
-    for lb in LABELS:
-        tp = sum(h == lb and p == lb for h, p in data)
-        pp = sum(p == lb for _, p in data); hh = sum(h == lb for h, _ in data)
-        pr = tp / pp if pp else 0.0; rc = tp / hh if hh else 0.0
-        f1 = 2 * pr * rc / (pr + rc) if pr + rc else 0.0
-        out["per_class"][lb] = {"precision": pr, "recall": rc, "f1": f1, "support": hh}
-        print(f"{lb:10s}{pr:>10.2f}{rc:>9.2f}{f1:>7.2f}{hh:>6d}")
-    print("\nMa trận nhầm lẫn (hàng = nhãn người, cột = máy dự đoán):")
-    print(f"{'':10s}" + "".join(f"{lb:>11s}" for lb in LABELS))
-    for h_lb in LABELS:
-        print(f"{h_lb:10s}" + "".join(f"{sum(h == h_lb and p == p_lb for h, p in data):>11d}" for p_lb in LABELS))
-    return out
-
-if __name__ == "__main__":      # chỉ chạy khi mở trực tiếp; import từ file khác sẽ không bị hỏi nhập mã
+if __name__ == "__main__":      
     results = run_cli()
