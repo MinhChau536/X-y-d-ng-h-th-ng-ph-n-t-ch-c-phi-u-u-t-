@@ -15,9 +15,9 @@ from urllib.parse import quote
 import requests
 import feedparser
 
-DAYS      = 30            # số ngày tin gần nhất
-MAX_ITEMS = 15            # số tin hiển thị trong PDF mỗi mã
-USE_LLM   = False         # True nếu đã đặt ANTHROPIC_API_KEY
+DAYS      = 30            
+MAX_ITEMS = 15            
+USE_LLM   = False         
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; StockResearchBot/1.0)"}
 TIMEOUT = 15
@@ -99,7 +99,7 @@ class NewsReport:
     company: str
     days: int
     generated_at: str
-    total_found: int = 0           # số tin sau lọc (trước khi chọn top)
+    total_found: int = 0           
     items: List[NewsItem] = field(default_factory=list)
     score: float = 0.0
     verdict: str = "Trung lập"
