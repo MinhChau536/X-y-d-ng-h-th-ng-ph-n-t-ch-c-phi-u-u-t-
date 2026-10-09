@@ -1,9 +1,13 @@
 # Hệ thống phân tích cơ hội đầu tư cổ phiếu
 
-Dự án giữa kỳ môn Gói phần mềm 1 - Python.
+Cài đặt (1 lần):   pip install -r requirements.txt
 
-## Thành viên
-Nhóm gồm 5 thành viên.
+Giao diện web:     streamlit run app.py
+Từng mã:           python main.py FPT HPG VCB
+Quét thị trường:   python screener.py --group VN30 --top 5
+Kiểm thử offline:  python main.py FPT --demo   (BCTC thật, giá & tin mô phỏng)
 
-## Mục tiêu
-Xây dựng hệ thống phân tích cổ phiếu và tự động xuất báo cáo PDF.
+PDF xuất ra thư mục output/. Thuyết minh chi tiết: THUYET_MINH.md
+
+Nguồn dữ liệu BCTC & ngành ICB kế thừa từ repo vn-annual-report-miner (MIT License,
+© Trương Minh Quân), dựa trên bộ dữ liệu vnfinancialdata của TS. Ngô Phú Thanh (UEL).
