@@ -1,8 +1,61 @@
-vnstock
-pandas
-numpy
-matplotlib
-fpdf2
-streamlit
-requests
-pyarrow
+# Stock Analytics Pro - Requirements
+# Python 3.11+ recommended
+
+# Core Framework
+streamlit>=1.28.0
+streamlit-option-menu>=0.3.6
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.11.0
+
+# HTTP Clients
+requests>=2.31.0
+httpx>=0.25.0
+websockets>=12.0
+
+# Financial Data
+# vnstock KHÔNG có trên PyPI – cài riêng SAU khi cài file này:
+#   pip install -U vnstock --extra-index-url https://vnstocks.com/api/simple
+
+# Technical Analysis (using pandas-ta as TA-Lib alternative - no C compiler needed)
+# pandas-ta là TÙY CHỌN (code tự tính chỉ báo bằng pandas nếu không có); bỏ khỏi danh sách
+# vì chưa hỗ trợ Python mới. Muốn dùng: pip install pandas-ta
+
+# Database
+duckdb>=0.9.0
+
+# Visualization
+plotly>=5.18.0
+
+# PDF: tạo báo cáo (fpdf2 + matplotlib) và đọc BCTC / BCTN (pypdf)
+fpdf2>=2.7.8
+matplotlib>=3.8
+pypdf>=4.0
+Pillow>=10.0.0
+
+# Excel & đọc trang web tài liệu
+openpyxl>=3.1
+beautifulsoup4>=4.12
+
+# Environment Configuration
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+respx>=0.20.0
+
+# Utilities
+pytz>=2023.3
+python-dateutil>=2.8.2
+tenacity>=8.2.0
+loguru>=0.7.0
+pydantic>=2.0.0
+
+# Cache
+diskcache>=5.6.0
+
+# Optional: for better performance
+orjson>=3.9.0

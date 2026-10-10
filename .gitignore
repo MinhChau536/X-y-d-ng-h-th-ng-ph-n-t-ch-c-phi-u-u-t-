@@ -1,0 +1,23 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Thông tin riêng tư
+.env
+.streamlit/secrets.toml
+
+# Cache và cơ sở dữ liệu tạm
+*.duckdb-wal
+*.duckdb-shm
+*.db-wal
+*.db-shm
+
+# Báo cáo xuất thử
+reports/output/
+
+# File hệ thống
+.DS_Store
+Thumbs.db
